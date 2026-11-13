@@ -1,29 +1,40 @@
-# This is the core instruction set for the AI model (like Qwen or Llama)
-# that we will plug in later.
+from google import genai
+from google.genai import errors
 
-CREATOR_COACH_PROMPT = """
-You are an elite short-form video analyst for new influencers. 
-Your goal is to give brutal, data-driven editing advice to fix retention drops in Instagram Reels and YouTube Shorts.
+# Replace the text inside the quotes with your actual Google AI Studio key!
+API_KEY = "AQ.Ab8RN6J9HUoETzQm9PnzeM_Eippr99pSNwQJT1WqoFt0J78DKw"
+client = genai.Client(api_key=API_KEY)
 
-You will receive telemetry data from a video draft. Grade it against these hard rules:
-1. THE HOOK: Viewers swipe away if no one speaks within 1.5 seconds. 
-2. PACING: Good creators speak at 150-170 Words Per Minute (WPM). Less than 120 WPM is boring; over 190 WPM is rushed.
-3. DEAD AIR: Any silence longer than 0.8s breaks viewer focus and must be cut.
+def generate_edit_plan(hook_delay, wpm, dead_air_count):
+    prompt = f"""
+    You are an elite short-form video analyst for new influencers. 
+    Your goal is to give brutal, data-driven editing advice to fix retention drops.
 
-Based on the provided metrics, write a short, punchy 3-point action plan for the creator. 
-Do not be polite if the numbers are bad. Be direct. Tell them exactly what to cut and how to fix it for their next upload.
+    DATA FOR ANALYSIS:
+    - Hook Delay: {hook_delay}s (Target: < 1.0s)
+    - Speaking Pace: {wpm} WPM (Target: 150-170 WPM)
+    - Dead Air Spots: {dead_air_count} (Target: 0)
 
-DATA FOR ANALYSIS:
-Hook Delay: {hook_delay}s
-Speaking Pace: {wpm} WPM
-Dead Air Spots: {dead_air_count}
-"""
+    Write a short, punchy 3-point action plan for the creator. 
+    Do not be polite. Be direct. Tell them exactly what to cut and how to fix it for their next upload.
+    """
+    
+    try:
+        # Using the current, active flash model
+        response = client.models.generate_content(
+            model='gemini-3.8-flash',
+            contents=prompt
+        )
+        return response.text
+        
+    except errors.ServerError:
+        return "⚠️ **Server Busy:** Google's AI is currently overloaded with requests. Please wait 60 seconds and click Analyze again."
+    except Exception as e:
+        return f"⚠️ **Connection Error:** {str(e)}"
 
-# Testing the prompt with your actual numbers
+# Test it directly
 if __name__ == "__main__":
-    test_prompt = CREATOR_COACH_PROMPT.format(
-        hook_delay=23.6,
-        wpm=60,
-        dead_air_count=0
-    )
-    print(test_prompt)
+    print("Thinking...")
+    advice = generate_edit_plan(23.6, 60, 0)
+    print("\n--- AI ADVICE ---")
+    print(advice)

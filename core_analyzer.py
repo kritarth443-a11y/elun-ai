@@ -1,6 +1,6 @@
-from growth_tracker import log_video_stats
 from moviepy import VideoFileClip
 from faster_whisper import WhisperModel
+from growth_tracker import log_video_stats
 
 def analyze_retention_metrics(video_path):
     print(f"Processing {video_path}...")
@@ -52,14 +52,14 @@ def analyze_retention_metrics(video_path):
 if __name__ == "__main__":
     video_name = "draft_reel.mp4"
     metrics = analyze_retention_metrics(video_name)
-
+    
     print("\n--- AI ANALYSIS RESULTS ---")
     print(f"Hook Delay: {metrics['hook_delay_seconds']}s (Aim for < 1.0s)")
     print(f"Speaking Pace: {metrics['words_per_minute']} WPM (Aim for 150-170 for Reels)")
     print(f"Dead Air Spots to Cut: {len(metrics['awkward_pauses'])}")
     for pause in metrics['awkward_pauses']:
         print(f" ✂️ Cut {pause['silence_duration']}s of silence at {pause['start_time']}s")
-
+        
     # Automatically log the real numbers to the database
     print("\nSaving to creator dashboard...")
     log_video_stats(
