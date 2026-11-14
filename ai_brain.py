@@ -1,12 +1,16 @@
 import os
 
-from google import genai
-from google.genai import errors
-
-client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
-
-
 def generate_edit_plan(hook_delay, wpm, dead_air_count):
+    """
+    Generate editing recommendations using Gemini,
+    only when explicitly configured. The rest of ELUN AI can run without Gemini.
+    """
+    api_key = os.getenv("GEMINI_API_KEY")
+    model_name = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+
+    if not api_key:
+        return "AI recommendation unavailable: GEMINI_API_KEY not set. Running in local-only mode."
+
     prompt = f"""
     You are an elite short-form video analyst for new influencers.
     Your goal is to give brutal, data-driven editing advice to fix retention drops.
@@ -21,13 +25,14 @@ def generate_edit_plan(hook_delay, wpm, dead_air_count):
     """
 
     try:
-        response = client.models.generate_content(model="gemini-3.8-flash", contents=prompt)
+        # Import the external SDK only when Gemini is enabled
+        from google import genai
+        from google.genai import errors
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(model=model_name, contents=prompt)
         return response.text
-    except errors.ServerError:
-        return "⚠️ **Server Busy:** Google's AI is currently overloaded with requests. Please wait 60 seconds and click Analyze again."
-    except Exception as e:
-        return f"⚠️ **Connection Error:** {e}"
-
+    except Exception as error:
+        return f"⚠️ **AI Error:** {type(error).__name__}: {error}"
 
 if __name__ == "__main__":
     print("Thinking...")

@@ -14,6 +14,60 @@ def load_model():
     return WhisperModel("base", device="cpu", compute_type="int8")
 
 
+def calculate_speech_metrics(words, pause_threshold=0.8):
+    """
+    Calculate speech start, estimated speaking rate,
+    and long pauses from timestamped Whisper words.
+    """
+    words = sorted(
+        (word for word in words if word is not None),
+        key=lambda word: word.start
+    )
+
+    if not words:
+        return {
+            "hook_delay_seconds": 0.0,
+            "words_per_minute": 0,
+            "awkward_pauses": []
+        }
+
+    first_start = float(words[0].start)
+    previous_end = float(words[0].end)
+
+    pauses = []
+    total_long_pause = 0.0
+
+    for word in words[1:]:
+        word_start = float(word.start)
+        word_end = float(word.end)
+
+        gap = max(0.0, word_start - previous_end)
+
+        if gap > pause_threshold:
+            pauses.append({
+                "start_time": round(previous_end, 2),
+                "silence_duration": round(gap, 2)
+            })
+            total_long_pause += gap
+
+        previous_end = max(previous_end, word_end)
+
+    speech_window = max(0.0, previous_end - first_start)
+    active_speech_seconds = max(0.0, speech_window - total_long_pause)
+
+    wpm = (
+        round(len(words) / active_speech_seconds * 60)
+        if active_speech_seconds > 0
+        else 0
+    )
+
+    return {
+        "hook_delay_seconds": round(first_start, 2),
+        "words_per_minute": wpm,
+        "awkward_pauses": pauses
+    }
+
+
 def analyze_retention_metrics(video_path):
     print(f"Processing {video_path}...")
 
@@ -22,14 +76,8 @@ def analyze_retention_metrics(video_path):
         video.close()
         raise ValueError("This video has no audio track.")
 
-    duration = video.duration
     fd, audio_path = tempfile.mkstemp(suffix=".wav")
     os.close(fd)
-
-    word_count = 0
-    hook_delay = None
-    dead_air = []
-    last_end = 0.0
 
     try:
         video.audio.write_audiofile(audio_path, logger=None)
@@ -38,45 +86,39 @@ def analyze_retention_metrics(video_path):
         print("Analyzing speech pacing...")
         segments, _ = model.transcribe(audio_path, word_timestamps=True)
 
+        all_words = []
         for segment in segments:
-            for word in segment.words:
-                if hook_delay is None:
-                    hook_delay = word.start
-                word_count += 1
-                gap = word.start - last_end
-                if last_end > 0 and gap > 0.8:
-                    dead_air.append({
-                        "start_time": round(last_end, 2),
-                        "silence_duration": round(gap, 2),
-                    })
-                last_end = word.end
+            if segment.words:
+                all_words.extend(segment.words)
+
+        metrics = calculate_speech_metrics(all_words)
+
     finally:
         video.close()
         os.remove(audio_path)
 
-    return {
-        "hook_delay_seconds": round(hook_delay, 2) if hook_delay else 0,
-        "words_per_minute": round(word_count / duration * 60) if duration > 0 else 0,
-        "awkward_pauses": dead_air,
-    }
+    return metrics
 
 
 if __name__ == "__main__":
     video_name = "draft_reel.mp4"
-    metrics = analyze_retention_metrics(video_name)
-    pauses = metrics["awkward_pauses"]
+    if not os.path.exists(video_name):
+        print(f"Place {video_name} in this folder to test analysis.")
+    else:
+        metrics = analyze_retention_metrics(video_name)
+        pauses = metrics["awkward_pauses"]
 
-    print("\n--- AI ANALYSIS RESULTS ---")
-    print(f"Hook Delay: {metrics['hook_delay_seconds']}s (Aim for < 1.0s)")
-    print(f"Speaking Pace: {metrics['words_per_minute']} WPM (Aim for 150-170 for Reels)")
-    print(f"Dead Air Spots to Cut: {len(pauses)}")
-    for pause in pauses:
-        print(f" ✂️ Cut {pause['silence_duration']}s of silence at {pause['start_time']}s")
+        print("\n--- AI ANALYSIS RESULTS ---")
+        print(f"Hook Delay: {metrics['hook_delay_seconds']}s (Aim for < 1.0s)")
+        print(f"Speaking Pace: {metrics['words_per_minute']} WPM (Aim for 150-170 for Reels)")
+        print(f"Dead Air Spots to Cut: {len(pauses)}")
+        for pause in pauses:
+            print(f" ✂️ Cut {pause['silence_duration']}s of silence at {pause['start_time']}s")
 
-    print("\nSaving to creator dashboard...")
-    log_video_stats(
-        video_name,
-        metrics["hook_delay_seconds"],
-        metrics["words_per_minute"],
-        len(pauses),
-    )
+        print("\nSaving to creator dashboard...")
+        log_video_stats(
+            video_name,
+            metrics["hook_delay_seconds"],
+            metrics["words_per_minute"],
+            len(pauses),
+        )
